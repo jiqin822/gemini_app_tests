@@ -3,6 +3,7 @@ export interface UserProfile {
   id: string;
   name: string;
   voicePrintId?: string;
+  voicePrintData?: string; // Base64 encoded PCM data of the user's voice
   gender?: string;
   personalDescription?: string;
   interests?: string[];
@@ -35,6 +36,15 @@ export interface EconomyConfig {
   currencySymbol: string;
 }
 
+export interface AppNotification {
+  id: string;
+  type: 'alert' | 'message' | 'system' | 'reward';
+  title: string;
+  message: string;
+  timestamp: number;
+  read: boolean;
+}
+
 export interface MarketItem {
   id: string;
   title: string;
@@ -64,6 +74,24 @@ export interface Transaction {
   timestamp: number;
 }
 
+export interface Ritual {
+    id: string;
+    title: string;
+    frequency: 'daily' | 'weekly';
+    streak: number;
+    lastCompleted: number; // timestamp
+    icon: string;
+    description: string;
+}
+
+export interface EmotionalBankEntry {
+    id: string;
+    type: 'deposit' | 'withdrawal';
+    description: string;
+    timestamp: number;
+    intensity: 1 | 2 | 3 | 4 | 5; // 1 = small, 5 = huge
+}
+
 export interface LovedOne {
   id: string;
   name: string;
@@ -72,7 +100,8 @@ export interface LovedOne {
   balance?: number; // The user's balance of this loved one's currency
   marketItems?: MarketItem[]; // Items available in this relationship context
   transactions?: Transaction[]; // History of interactions
-  // Deprecated: inventory?: string[]; 
+  rituals?: Ritual[]; // Shared habits
+  emotionalBank?: EmotionalBankEntry[]; // The 5:1 ratio ledger
 }
 
 export enum AppMode {

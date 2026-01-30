@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { UserProfile, EconomyConfig, LovedOne } from '../types';
+import { UserProfile, EconomyConfig, LovedOne, AppNotification } from '../types';
 import { Heart, Trophy, Check, X, Map as MapIcon, Lock, Star, ChevronDown, PenTool, Save, Play, Compass, FileText, Search, Plus, MessageSquare, Edit3 } from 'lucide-react';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   economy: EconomyConfig;
   onExit: () => void;
   onUpdateLovedOne: (id: string, updates: Partial<LovedOne>) => void;
+  onAddNotification: (type: AppNotification['type'], title: string, message: string) => void;
 }
 
 interface QuizQuestion {
@@ -81,7 +83,7 @@ const OPEN_ENDED_QUESTIONS: OpenEndedQuestion[] = [
   { id: 'sq10', category: 'Fears', text: "What is your biggest irrational fear?" },
 ];
 
-export const LoveMapsMode: React.FC<Props> = ({ user, xp, setXp, economy, onExit, onUpdateLovedOne }) => {
+export const LoveMapsMode: React.FC<Props> = ({ user, xp, setXp, economy, onExit, onUpdateLovedOne, onAddNotification }) => {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(user.lovedOnes[0]?.id || '');
   const [mapLevels, setMapLevels] = useState<MapLevel[]>(INITIAL_MAP_LEVELS);
   const [activeLevelId, setActiveLevelId] = useState<string | null>(null);
@@ -162,6 +164,7 @@ export const LoveMapsMode: React.FC<Props> = ({ user, xp, setXp, economy, onExit
       if (selectedSubject) {
           const currentBalance = selectedSubject.balance || 0;
           onUpdateLovedOne(selectedSubject.id, { balance: currentBalance + xpEarned });
+          onAddNotification('reward', 'Level Conquered', `Mastered "${level.title}". ${xpEarned}XP added for ${selectedSubject.name}`);
       }
       
       setMapLevels(prev => {
@@ -214,23 +217,26 @@ export const LoveMapsMode: React.FC<Props> = ({ user, xp, setXp, economy, onExit
       </div>
 
       {/* Header */}
-      <div className="bg-white border-b-4 border-slate-900 px-4 py-3 shrink-0 flex items-center justify-between relative z-10">
-           <div className="flex items-center gap-3">
-                <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
-                     <X size={20} />
-                </button>
-                <div className="flex flex-col">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Training</span>
-                    <span className="text-xl font-black text-slate-900 font-mono leading-none">LOVE MAPS</span>
-                </div>
+      <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between shrink-0">
+           <div>
+               <div className="flex items-center gap-2 text-slate-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-1">
+                   <MapIcon size={12} />
+                   <span>MODULE: DISCOVERY</span>
+               </div>
+               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">
+                   LIVING ROOM
+               </h1>
+               <p className="text-[9px] font-mono text-rose-500 uppercase tracking-widest font-bold mt-1">
+                   LOVE MAPS
+               </p>
            </div>
            
-           <div className="flex items-center gap-2">
-                <div className="bg-slate-900 text-white px-3 py-1 text-xs font-bold font-mono">
-                    Global XP: {xp}
-                </div>
+           <div className="flex items-center gap-4">
+               <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
+                     <X size={20} />
+                </button>
            </div>
-      </div>
+      </header>
 
       {!quizView && (
           <div className="flex p-2 gap-2 border-b border-slate-200 bg-white shrink-0 relative z-10">

@@ -1,12 +1,14 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, ChatAction, UserProfile } from '../types';
-import { Send, User, Bot, Loader2, Info, Users, Handshake, Check, X as XIcon, MessageSquareQuote, Wind, Heart, Star, ChevronRight, Plus, Terminal, Mic } from 'lucide-react';
+import { ChatMessage, ChatAction, UserProfile, AppNotification } from '../types';
+import { Send, User, Bot, Loader2, Info, Users, Handshake, Check, X as XIcon, MessageSquareQuote, Wind, Heart, Star, ChevronRight, Plus, Terminal, Mic, Armchair } from 'lucide-react';
 import { getTherapistResponse } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 
 interface Props {
   user: UserProfile;
   onExit: () => void;
+  onAddNotification: (type: AppNotification['type'], title: string, message: string) => void;
 }
 
 // ... Overlays remain similar but styled ...
@@ -145,7 +147,7 @@ interface Subject {
   relationship: string;
 }
 
-export const TherapistMode: React.FC<Props> = ({ user, onExit }) => {
+export const TherapistMode: React.FC<Props> = ({ user, onExit, onAddNotification }) => {
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
@@ -317,6 +319,8 @@ export const TherapistMode: React.FC<Props> = ({ user, onExit }) => {
               text: `**INCOMING TRANSMISSION FROM ${selectedSubject.name.toUpperCase()}:**\n\n"${simPerspective}"`,
               timestamp: Date.now()
           }]);
+          
+          onAddNotification('message', 'New Perspective', `Received mediation data from ${selectedSubject.name}.`);
 
           triggerAnalysisWithPerspective(simPerspective);
 
@@ -364,13 +368,15 @@ export const TherapistMode: React.FC<Props> = ({ user, onExit }) => {
             }}>
         </div>
 
-        <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between">
+        {/* Standard Room Header */}
+        <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between shrink-0">
            <div>
                <div className="flex items-center gap-2 text-slate-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-1">
                    <Terminal size={12} />
-                   <span>Module: Therapy</span>
+                   <span>MODULE: THERAPY</span>
                </div>
-               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Session Setup</h1>
+               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">LOUNGE</h1>
+               <p className="text-[9px] font-mono text-indigo-600 uppercase tracking-widest font-bold mt-1">SESSION SETUP</p>
            </div>
            <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
                <XIcon size={20} />
@@ -470,22 +476,22 @@ export const TherapistMode: React.FC<Props> = ({ user, onExit }) => {
       )}
 
       {/* Header */}
-      <header className={`relative z-10 px-4 py-3 border-b-4 flex justify-between items-center transition-colors ${isMediation ? 'bg-indigo-900 border-indigo-950 text-white' : 'bg-white border-slate-900 text-slate-900'}`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 flex items-center justify-center border-2 ${isMediation ? 'bg-indigo-700 border-white text-white' : 'bg-indigo-50 border-slate-900 text-indigo-600'}`}>
-            {isMediation ? <Handshake size={20} /> : <Bot size={20} />}
-          </div>
-          <div>
-            <h2 className="font-black uppercase tracking-tight leading-none text-lg">{isMediation ? 'Mediator.AI' : 'Therapist.AI'}</h2>
-            <p className={`text-[9px] font-mono uppercase tracking-widest ${isMediation ? 'text-indigo-300' : 'text-slate-500'}`}>
-                {isMediation ? `LINK: ${selectedSubject.name}` : `SUBJ: ${selectedSubject.name}`}
-            </p>
-          </div>
+      <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between shrink-0">
+        <div>
+           <div className="flex items-center gap-2 text-slate-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-1">
+               <Armchair size={12} />
+               <span>MODULE: THERAPY</span>
+           </div>
+           <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">LOUNGE</h1>
+           <p className={`text-[9px] font-mono ${isMediation ? 'text-indigo-600' : 'text-indigo-600'} uppercase tracking-widest font-bold mt-1`}>
+               {isMediation ? 'MEDIATION ACTIVE' : 'AI THERAPY'}
+           </p>
         </div>
-
-        <button onClick={onExit} className={`text-xs font-bold uppercase tracking-wider border-2 px-2 py-1 ${isMediation ? 'border-indigo-400 text-indigo-200 hover:bg-indigo-800' : 'border-slate-200 text-slate-400 hover:border-slate-900 hover:text-slate-900'}`}>
-          Exit
-        </button>
+        <div className="flex items-center gap-4">
+            <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
+                <XIcon size={20} />
+            </button>
+        </div>
       </header>
 
       {/* Main Content Area - CHAT ONLY */}

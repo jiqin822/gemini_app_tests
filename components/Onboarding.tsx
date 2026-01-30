@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { UserProfile, LovedOne } from '../types';
 import { Mic, Check, ArrowRight, Plus, Trash2, Users, Heart, Ruler, Fingerprint, ShieldCheck, Activity, BrainCircuit, Info } from 'lucide-react';
+import { createPcmBlob } from '../services/audioUtils';
 
 interface Props {
   onComplete: (profile: UserProfile) => void;
@@ -26,6 +27,14 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingProgress, setRecordingProgress] = useState(0);
   const [voiceRecorded, setVoiceRecorded] = useState(false);
+  const [voiceData, setVoiceData] = useState<string | null>(null);
+
+  // Audio Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Float32Array[]>([]);
 
   const addLovedOne = () => {
     if (newName.trim()) {
@@ -44,23 +53,90 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
     setLovedOnes(lovedOnes.filter(l => l.id !== id));
   };
 
-  const handleVoicePrint = () => {
-    setIsRecording(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 2; // 50 ticks = 100%
-      setRecordingProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setIsRecording(false);
-        setVoiceRecorded(true);
-        setTimeout(() => setStep(4), 500);
+  const handleVoicePrint = async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        audioContextRef.current = ctx;
+        
+        const source = ctx.createMediaStreamSource(stream);
+        sourceRef.current = source;
+        
+        const processor = ctx.createScriptProcessor(4096, 1, 1);
+        processorRef.current = processor;
+        
+        audioChunksRef.current = [];
+        setIsRecording(true);
+        setRecordingProgress(0);
+
+        processor.onaudioprocess = (e) => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            // Copy buffer to avoid reference issues
+            audioChunksRef.current.push(new Float32Array(inputData));
+        };
+
+        source.connect(processor);
+        processor.connect(ctx.destination);
+
+        // Progress Timer (Record for ~3 seconds)
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 2; // 50 ticks = 100% -> approx 2.5s
+          setRecordingProgress(progress);
+          if (progress >= 100) {
+            clearInterval(interval);
+            stopRecording();
+          }
+        }, 60); 
+
+    } catch (e) {
+        console.error("Mic access failed", e);
+        alert("Could not access microphone.");
+    }
+  };
+
+  const stopRecording = () => {
+      if (processorRef.current) {
+          processorRef.current.disconnect();
+          processorRef.current = null;
       }
-    }, 50); // 2.5 seconds total
+      if (sourceRef.current) {
+          sourceRef.current.disconnect();
+          sourceRef.current = null;
+      }
+      if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+      }
+      if (audioContextRef.current) {
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+      }
+
+      setIsRecording(false);
+      setVoiceRecorded(true);
+
+      // Process Audio Data
+      const totalLength = audioChunksRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
+      const result = new Float32Array(totalLength);
+      let offset = 0;
+      for (const chunk of audioChunksRef.current) {
+          result.set(chunk, offset);
+          offset += chunk.length;
+      }
+      
+      // Convert to PCM Base64 for storage using existing util (reused from Gemini service logic)
+      const pcmBlob = createPcmBlob(result);
+      setVoiceData(pcmBlob.data); // Store the base64 string
+
+      setTimeout(() => setStep(4), 500);
   };
 
   const handleSkipVoice = () => {
     setVoiceRecorded(false);
+    setVoiceData(null);
     setStep(4);
   };
 
@@ -89,6 +165,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
       },
       // Only set ID if they actually recorded
       voicePrintId: voiceRecorded ? 'vp_' + Date.now() : undefined,
+      voicePrintData: voiceData || undefined,
       personalityType: personality || 'Unknown', 
     });
   };
@@ -331,7 +408,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
               <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-6 relative overflow-hidden group">
                  <div className="absolute top-2 left-2 text-[10px] font-mono text-slate-400">REF: SCRIPT-01</div>
                  <p className="font-serif italic text-lg text-slate-800 leading-relaxed relative z-10">
-                    "Communication is the bridge between confusion and clarity."
+                    "Communication is the bridge between confusion and clarity. My voice is my identity."
                  </p>
                  <div className="absolute bottom-2 right-2 text-slate-200">
                     <MessageCircle size={40} strokeWidth={1} />
@@ -348,7 +425,7 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
                                 style={{ width: `${recordingProgress}%` }}
                             />
                         </div>
-                        <p className="text-[10px] font-mono text-slate-400">DO NOT CLOSE WINDOW</p>
+                        <p className="text-[10px] font-mono text-slate-400">READ THE QUOTE ABOVE</p>
                     </div>
                 ) : (
                     <button 
@@ -363,13 +440,13 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
               {!isRecording && (
                 <>
                     <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
-                        Tap to begin calibration
+                        Tap to begin voice calibration
                     </p>
 
                     <div className="bg-indigo-50 border border-indigo-100 p-3 text-left flex items-start gap-2 mt-4">
                         <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
                         <p className="text-[10px] text-indigo-900 font-medium leading-relaxed">
-                            <strong>NOTE:</strong> Voice data is used exclusively for the <strong>Real-time Conversation Coaching</strong> mode to identify you during conflict resolution.
+                            <strong>NOTE:</strong> Your voice data is processed to help the AI distinguish you from your partner during live coaching sessions.
                         </p>
                     </div>
 

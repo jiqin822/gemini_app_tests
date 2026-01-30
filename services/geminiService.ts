@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Schema, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI, Type, Schema, LiveServerMessage, Modality, FunctionDeclaration } from "@google/genai";
 import { ActivityCard, UserProfile } from "../types";
 import { createPcmBlob, base64ToUint8Array, decodeAudioData } from "./audioUtils";
 
@@ -144,54 +144,144 @@ export const generateActivities = async (
 
 // --- Live Coach Mode (Gemini Live API) ---
 
+export interface AnalysisData {
+    transcript: string;
+    speaker: string;
+    sentiment: 'Positive' | 'Neutral' | 'Negative' | 'Hostile';
+    horseman: 'None' | 'Criticism' | 'Contempt' | 'Defensiveness' | 'Stonewalling';
+}
+
 export interface LiveCoachCallbacks {
   onOpen: () => void;
   onClose: () => void;
   onAudioData: (buffer: AudioBuffer) => void;
-  onNudge: (text: string) => void; // Using transcription as nudges for this demo
+  onAnalysis: (data: AnalysisData) => void;
   onError: (error: any) => void;
 }
 
-export const connectLiveCoach = async (callbacks: LiveCoachCallbacks): Promise<{
+// Tool Definition for the Model to report what it hears/analyzes
+const analysisToolDeclaration: FunctionDeclaration = {
+    name: "reportAnalysis",
+    description: "Reports the transcription and psychological analysis of the latest conversation turn.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            transcript: { type: Type.STRING, description: "The exact words spoken in the last turn." },
+            speaker: { type: Type.STRING, description: "The identified speaker name." },
+            sentiment: { type: Type.STRING, enum: ['Positive', 'Neutral', 'Negative', 'Hostile'], description: "The emotional tone of the speech." },
+            horseman: { type: Type.STRING, enum: ['None', 'Criticism', 'Contempt', 'Defensiveness', 'Stonewalling'], description: "Detected Gottman conflict pattern." }
+        },
+        required: ["transcript", "speaker", "sentiment", "horseman"]
+    }
+};
+
+export const connectLiveCoach = async (
+    user: UserProfile, 
+    callbacks: LiveCoachCallbacks
+): Promise<{
   sendAudio: (data: Float32Array) => void;
   disconnect: () => void;
 }> => {
   const model = 'gemini-2.5-flash-native-audio-preview-12-2025';
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  const partnerName = user.partnerName || 'Partner';
   
-  // We use a promise to ensure we only send data once the session is established
   let sessionResolve: (value: LiveSession) => void;
   const sessionPromise = new Promise<LiveSession>((resolve) => {
     sessionResolve = resolve;
   });
 
+  let currentTranscriptBuffer = "";
+
   const session = await ai.live.connect({
     model,
     config: {
-      responseModalities: [Modality.AUDIO],
-      systemInstruction: `You are a real-time communication coach observing a conversation. 
-      Your output audio should be brief, calm interventions or "nudges" when you detect tension, misunderstanding, or a great moment of connection.
-      If the user is practicing alone, roleplay as their partner.
-      Keep interventions short.`,
-      outputAudioTranscription: { },
+      responseModalities: [Modality.AUDIO], 
+      inputAudioTranscription: {}, // Enable native transcription
+      systemInstruction: `You are an advanced **Gottman Method Relationship Coach** observing a live conversation between two partners: **${user.name}** and **${partnerName}**.
+      
+      **YOUR DUAL ROLE:**
+      1. **Silent Analyst (Constant):** 
+         - Listen to the user input. 
+         - You MAY call the \`reportAnalysis\` tool to log deep psychological insights or if you detect a specific speaker change/horseman. 
+         - **Important**: The system auto-transcribes input. Use the tool primarily for ANALYSIS (Sentiment/Horsemen) or correcting the Speaker ID.
+         - **Identify Speakers**: 
+             - You will receive a short audio clip at the beginning.
+             - **THAT CLIP IS THE VOICE OF ${user.name}**.
+             - Use that voice print to distinguish **${user.name}** from **${partnerName}**.
+      
+      2. **Active Coach (Intervention Only):**
+         - Generally, remain silent (do not generate audio) and just use the tool.
+         - **Generate AUDIO ONLY IF**:
+           - You detect **Contempt** (e.g., mockery, name-calling).
+           - You detect **Stonewalling** (complete withdrawal).
+           - The conflict is escalating rapidly to hostility.
+         - If intervening, keep it brief (under 10s), calm, and gentle.`,
+      tools: [{ functionDeclarations: [analysisToolDeclaration] }],
     },
     callbacks: {
       onopen: () => {
+        // --- VOICE IDENTIFICATION INJECTION ---
+        if (user.voicePrintData) {
+            console.log("Sending Voice Print Data for Identification...");
+            sessionPromise.then(s => {
+                s.sendRealtimeInput({
+                    media: {
+                        mimeType: "audio/pcm;rate=16000",
+                        data: user.voicePrintData!
+                    }
+                });
+            });
+        }
         callbacks.onOpen();
       },
       onmessage: async (msg: LiveServerMessage) => {
-        // Handle Audio Output
+        // 1. Handle Native Transcription (Guarantees text appears)
+        const transcription = msg.serverContent?.inputTranscription;
+        if (transcription && transcription.text) {
+            currentTranscriptBuffer += transcription.text;
+        }
+
+        if (msg.serverContent?.turnComplete) {
+            if (currentTranscriptBuffer.trim()) {
+                // Send what we heard as a basic transcript event
+                // The tool call might follow and provide richer data (sentiment, correct speaker)
+                // The UI should handle these potential duplicates or we treat this as 'Detecting...'
+                callbacks.onAnalysis({
+                    transcript: currentTranscriptBuffer,
+                    speaker: "Detecting...", // Temporary placeholder
+                    sentiment: "Neutral",
+                    horseman: "None"
+                });
+                currentTranscriptBuffer = "";
+            }
+        }
+
+        // 2. Handle Tool Calls (The Analysis Stream)
+        if (msg.toolCall) {
+            for (const fc of msg.toolCall.functionCalls) {
+                if (fc.name === 'reportAnalysis') {
+                    const analysis = fc.args as unknown as AnalysisData;
+                    callbacks.onAnalysis(analysis);
+                    
+                    // Acknowledge the tool call so the model continues
+                    sessionPromise.then(s => s.sendToolResponse({
+                        functionResponses: {
+                            id: fc.id,
+                            name: fc.name,
+                            response: { result: "Analysis logged." } 
+                        }
+                    }));
+                }
+            }
+        }
+
+        // 3. Handle Audio Output (The Coach Interventions)
         const base64Audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
         if (base64Audio) {
           const uint8 = base64ToUint8Array(base64Audio);
           const audioBuffer = await decodeAudioData(uint8, audioContext);
           callbacks.onAudioData(audioBuffer);
-        }
-
-        // Handle Text Transcription (Used as Visual Nudges)
-        const transcription = msg.serverContent?.outputTranscription?.text;
-        if (transcription) {
-          callbacks.onNudge(transcription);
         }
       },
       onclose: () => callbacks.onClose(),

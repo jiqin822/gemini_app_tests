@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
-import { ArrowLeft, Save, ArrowRight, Fingerprint } from 'lucide-react';
+import { ArrowLeft, Save, ArrowRight, Fingerprint, X } from 'lucide-react';
 
 interface Props {
   user: UserProfile;
@@ -47,23 +47,23 @@ export const EditProfile: React.FC<Props> = ({ user, onBack, onUpdateProfile }) 
         </div>
 
         {/* Header */}
-        <div className="bg-white border-b-4 border-slate-900 px-4 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20">
-            <div className="flex items-center gap-3">
-                <button 
-                onClick={onBack}
-                className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors"
-                >
-                <ArrowLeft size={16} />
-                </button>
-                <div>
-                    <h1 className="text-sm font-black text-slate-900 uppercase tracking-widest leading-none">Config</h1>
-                    <p className="text-[9px] text-slate-400 font-mono uppercase">EDIT CORE DATA</p>
+        <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between shrink-0 sticky top-0">
+            <div>
+                <div className="flex items-center gap-2 text-slate-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-1">
+                    <Fingerprint size={12} />
+                    <span>MODULE: CONFIG</span>
                 </div>
+                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">
+                    IDENTITY
+                </h1>
+                <p className="text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold mt-1">
+                    EDIT CORE DATA
+                </p>
             </div>
-            <div className="w-8 h-8 bg-slate-900 text-white flex items-center justify-center font-bold text-sm border-2 border-slate-900">
-                <Fingerprint size={16} />
-            </div>
-        </div>
+            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
+                <X size={20} />
+            </button>
+        </header>
 
         <div className="flex-1 overflow-y-auto p-4 pb-20 relative z-10">
              <div className="bg-white border-2 border-slate-900 p-6 shadow-[4px_4px_0px_rgba(30,41,59,0.1)]">

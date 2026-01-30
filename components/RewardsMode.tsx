@@ -1,12 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
-import { UserProfile, EconomyConfig, MarketItem, LovedOne, Transaction, TransactionStatus } from '../types';
-import { Gift, Star, Check, X, Lock, Shield, Settings, Plus, DollarSign, Wallet, ShoppingBag, Trash2, Users, ChevronDown, User, Tag, AlertCircle, Package, Clock, Archive, ArrowLeft, Pencil } from 'lucide-react';
+import { UserProfile, EconomyConfig, MarketItem, LovedOne, Transaction, TransactionStatus, EmotionalBankEntry, AppNotification } from '../types';
+import { Gift, Star, Check, X, Lock, Shield, Settings, Plus, DollarSign, Wallet, ShoppingBag, Trash2, Users, ChevronDown, User, Tag, AlertCircle, Package, Clock, Archive, ArrowLeft, Pencil, Heart, PiggyBank, TrendingDown, TrendingUp } from 'lucide-react';
 
 interface Props {
   user: UserProfile;
   onUpdateLovedOne: (id: string, updates: Partial<LovedOne>) => void;
   onUpdateProfile: (user: UserProfile) => void;
   onExit: () => void;
+  onAddNotification: (type: AppNotification['type'], title: string, message: string) => void;
 }
 
 const CURRENCY_PRESETS = [
@@ -18,15 +20,16 @@ const CURRENCY_PRESETS = [
     { name: 'Gems', symbol: '💎' },
 ];
 
-export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateProfile, onExit }) => {
+export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateProfile, onExit, onAddNotification }) => {
   const [selectedLovedOneId, setSelectedLovedOneId] = useState<string | null>(user.lovedOnes.length > 0 ? user.lovedOnes[0].id : null);
   
   // View State
-  const [viewMode, setViewMode] = useState<'market' | 'vault'>('market');
+  const [viewMode, setViewMode] = useState<'market' | 'vault' | 'bank'>('market');
   const [marketTab, setMarketTab] = useState<'earn' | 'spend'>('spend');
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showDepositModal, setShowDepositModal] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{ item: MarketItem, action: 'buy' | 'accept' } | null>(null);
   
@@ -35,6 +38,11 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
   const [newItemCost, setNewItemCost] = useState('');
   const [newItemIcon, setNewItemIcon] = useState('🎁');
   const [newItemCategory, setNewItemCategory] = useState<'earn' | 'spend'>('spend');
+
+  // Deposit State
+  const [depositDesc, setDepositDesc] = useState('');
+  const [depositType, setDepositType] = useState<'deposit' | 'withdrawal'>('deposit');
+  const [depositIntensity, setDepositIntensity] = useState<number>(1);
 
   // Derived state for the MAIN selection (used for Market view)
   const selectedLovedOne = user.lovedOnes.find(l => l.id === selectedLovedOneId);
@@ -94,11 +102,13 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
               balance: currentBalance - item.cost,
               transactions: [...currentTransactions, newTx]
           });
+          onAddNotification('reward', 'Purchase Confirmed', `You bought "${item.title}" for ${item.cost} ${selectedLovedOne.economy.currencySymbol}`);
       } else {
           // Don't award money yet for accepting quests
           onUpdateLovedOne(selectedLovedOne.id, { 
               transactions: [...currentTransactions, newTx]
           });
+          onAddNotification('system', 'Quest Accepted', `Started: "${item.title}". Mark complete in Vault when done.`);
       }
       setConfirmModal(null);
   };
@@ -119,6 +129,11 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
       // If a bounty is APPROVED, user gets paid
       if (newStatus === 'approved' && tx.status !== 'approved') {
           newBalance += tx.cost;
+          onAddNotification('reward', 'Bounty Verified', `Received ${tx.cost} ${targetLovedOne.economy?.currencySymbol} for "${tx.title}"`);
+      } else if (newStatus === 'redeemed') {
+          onAddNotification('system', 'Item Redeemed', `Used "${tx.title}". Hope you enjoyed it!`);
+      } else if (newStatus === 'pending_approval') {
+          onAddNotification('system', 'Pending Approval', `Partner notified to verify "${tx.title}".`);
       }
 
       const updatedTransactions = transactions.map(t => 
@@ -129,6 +144,33 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
           balance: newBalance,
           transactions: updatedTransactions
       });
+  };
+
+  // --- Emotional Bank Logic ---
+
+  const handleLogBankEntry = () => {
+      if (!selectedLovedOne || !depositDesc.trim()) return;
+
+      const newEntry: EmotionalBankEntry = {
+          id: Date.now().toString(),
+          type: depositType,
+          description: depositDesc,
+          timestamp: Date.now(),
+          intensity: depositIntensity as 1|2|3|4|5
+      };
+
+      const currentBank = selectedLovedOne.emotionalBank || [];
+      onUpdateLovedOne(selectedLovedOne.id, { emotionalBank: [newEntry, ...currentBank] });
+
+      onAddNotification(
+          'alert', 
+          `Emotional Bank ${depositType === 'deposit' ? 'Deposit' : 'Withdrawal'}`, 
+          `${depositType === 'deposit' ? '+' : '-'}${depositIntensity} Intensity logged for ${selectedLovedOne.name}`
+      );
+
+      setDepositDesc('');
+      setDepositIntensity(1);
+      setShowDepositModal(false);
   };
 
   // --- Listing Management ---
@@ -175,6 +217,7 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
   }
 
   // Use the selected loved one's economy for displaying costs/rewards in Market
+  // Because "Love currency is per user", when I view the market for "Partner", I am viewing items *they* set up, priced in *their* currency.
   const currentContextEconomy = selectedLovedOne.economy || { currencyName: 'Tokens', currencySymbol: '🪙' };
   const balance = selectedLovedOne.balance || 0;
   const items = selectedLovedOne.marketItems || [];
@@ -195,6 +238,14 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
   // User's own economy (for editing)
   const userEconomy = user.economy || { currencyName: 'Love Tokens', currencySymbol: '🪙' };
 
+  // Calculate Bank Stats
+  const bankEntries = selectedLovedOne.emotionalBank || [];
+  const deposits = bankEntries.filter(e => e.type === 'deposit').length;
+  const withdrawals = bankEntries.filter(e => e.type === 'withdrawal').length;
+  // Calculate raw ratio (avoid divide by zero)
+  const ratio = withdrawals === 0 ? deposits : (deposits / withdrawals);
+  const isHealthy = ratio >= 5;
+
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans relative">
         {/* Background Grid */}
@@ -206,33 +257,63 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
         </div>
 
         {/* Header (White) - Title + Config Button */}
-        <div className="bg-white border-b-4 border-slate-900 px-4 py-3 shrink-0 flex items-center justify-between relative z-10">
-           <div className="flex items-center gap-3">
-                <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
-                     <X size={20} />
-                </button>
-                <div>
-                    <h1 className="text-lg font-black text-slate-900 uppercase tracking-tighter leading-none">
-                        Marketplace
-                    </h1>
-                    <p className="text-[9px] font-mono text-yellow-600 uppercase tracking-widest font-bold">Shared Economy</p>
-                </div>
+        <header className="relative z-10 px-6 py-4 bg-white border-b-4 border-slate-900 flex items-center justify-between shrink-0">
+           <div>
+               <div className="flex items-center gap-2 text-slate-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-1">
+                   <Lock size={12} />
+                   <span>MODULE: MARKETPLACE</span>
+               </div>
+               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">
+                   VAULT
+               </h1>
+               <p className="text-[9px] font-mono text-yellow-600 uppercase tracking-widest font-bold mt-1">
+                   SHARED ECONOMY
+               </p>
            </div>
            
-           <button 
-                onClick={() => setViewMode(viewMode === 'vault' ? 'market' : 'vault')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase border-2 transition-colors ${
-                    viewMode === 'vault'
-                    ? 'bg-slate-900 text-white border-slate-900' 
+           <div className="flex gap-2">
+               <button onClick={onExit} className="w-8 h-8 flex items-center justify-center border-2 border-slate-200 hover:border-slate-900 text-slate-400 hover:text-slate-900 transition-colors">
+                     <X size={20} />
+                </button>
+           </div>
+        </header>
+
+        {/* Tab Bar */}
+        <div className="flex p-2 gap-2 border-b border-slate-200 bg-white shrink-0 relative z-10">
+            <button
+                onClick={() => setViewMode('market')}
+                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all border-2 ${
+                    viewMode === 'market'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-[2px_2px_0px_rgba(0,0,0,0.2)]' 
                     : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
                 }`}
-             >
-                <Package size={14} /> {viewMode === 'vault' ? 'Back' : 'My Vault'}
-             </button>
+            >
+                <ShoppingBag size={14} /> Market
+            </button>
+            <button
+                onClick={() => setViewMode('vault')}
+                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all border-2 ${
+                    viewMode === 'vault'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-[2px_2px_0px_rgba(0,0,0,0.2)]' 
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                }`}
+            >
+                <Package size={14} /> Vault
+            </button>
+            <button
+                onClick={() => setViewMode('bank')}
+                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all border-2 ${
+                    viewMode === 'bank'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-[2px_2px_0px_rgba(0,0,0,0.2)]' 
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                }`}
+            >
+                <Heart size={14} /> Ledger
+            </button>
         </div>
 
         {/* Sub-Header (Dark) - User Dropdown + Add Button */}
-        {viewMode !== 'vault' && (
+        {viewMode !== 'vault' && viewMode !== 'bank' && (
             <div className="bg-slate-900 text-white p-2 flex justify-between items-center z-10">
                 <div className="flex items-center gap-2 px-2">
                     <User size={14} className="text-slate-400" />
@@ -492,83 +573,36 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
             </div>
         )}
 
-        {/* === MARKET VIEW (SHOP/EARN) === */}
-        {viewMode === 'market' && (
-            <>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 relative z-10">
-                    {/* Items List */}
-                    {items.filter(i => i.category === marketTab).map(item => {
-                         const isAffordable = balance >= item.cost;
-                         
-                         // Check status in transactions (for current loved one)
-                         const activeTx = currentLovedOneTransactions.find(t => t.itemId === item.id && (t.status === 'accepted' || t.status === 'pending_approval'));
-                         
-                         // Logic for "Greyed Out"
-                         let isUnavailable = false;
-                         let statusLabel = '';
+        {/* ... Modal rendering remains same ... */}
+        {/* Deposit Modal */}
+        {showDepositModal && (
+            <div className="absolute inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
+                 <div className="bg-white w-full max-w-sm border-2 border-slate-900 p-6 shadow-2xl relative">
+                     <button onClick={() => setShowDepositModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-900"><X size={20} /></button>
+                     <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight mb-4">Log Interaction</h3>
+                     
+                     <div className="flex gap-2 mb-4">
+                         <button onClick={() => setDepositType('deposit')} className={`flex-1 py-3 text-xs font-bold uppercase border-2 ${depositType === 'deposit' ? 'bg-green-100 text-green-700 border-green-500' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>Deposit (+)</button>
+                         <button onClick={() => setDepositType('withdrawal')} className={`flex-1 py-3 text-xs font-bold uppercase border-2 ${depositType === 'withdrawal' ? 'bg-red-100 text-red-700 border-red-500' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>Withdrawal (-)</button>
+                     </div>
 
-                         if (marketTab === 'spend') {
-                             if (!isAffordable) {
-                                 isUnavailable = true;
-                                 statusLabel = 'Insufficient Funds';
-                             }
-                         } else {
-                             // Earn Tab
-                             if (activeTx) {
-                                 isUnavailable = true;
-                                 statusLabel = activeTx.status === 'pending_approval' ? 'Pending Verification' : 'In Progress (Check Vault)';
-                             }
-                         }
+                     <div className="mb-4">
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Description</label>
+                         <input type="text" value={depositDesc} onChange={(e) => setDepositDesc(e.target.value)} placeholder={depositType === 'deposit' ? "e.g., Complimented dinner" : "e.g., Criticized driving"} className="w-full border-2 border-slate-200 p-2 text-sm font-bold" />
+                     </div>
 
-                         return (
-                            <button 
-                                key={item.id} 
-                                onClick={() => initiateTransaction(item)}
-                                disabled={isUnavailable}
-                                className={`w-full p-4 border-2 text-left relative overflow-hidden transition-all group active:translate-y-[2px] active:shadow-none ${
-                                    marketTab === 'spend'
-                                        ? isUnavailable
-                                            ? 'bg-slate-50 border-slate-200 opacity-60 grayscale cursor-not-allowed'
-                                            : 'bg-white border-slate-900 hover:bg-slate-50 shadow-[4px_4px_0px_rgba(30,41,59,1)]' 
-                                        : isUnavailable
-                                            ? 'bg-slate-50 border-slate-200 opacity-70 cursor-not-allowed'
-                                            : 'bg-white border-emerald-600 hover:bg-emerald-50 shadow-[4px_4px_0px_#059669]'
-                                }`}
-                            >
-                                <div className="flex items-center gap-4 relative z-10">
-                                    <div className={`text-3xl w-14 h-14 flex items-center justify-center border-2 border-slate-200 bg-slate-50`}>
-                                        {item.icon}
-                                    </div>
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-lg leading-tight uppercase tracking-tight mb-1 text-slate-900">{item.title}</h4>
-                                        
-                                        {statusLabel ? (
-                                             <div className="inline-block px-2 py-0.5 border text-[10px] font-mono font-bold uppercase bg-slate-200 text-slate-500 border-slate-300">
-                                                {statusLabel}
-                                             </div>
-                                        ) : (
-                                            <div className={`inline-block px-2 py-0.5 border text-[10px] font-mono font-bold uppercase ${
-                                                marketTab === 'spend'
-                                                    ? 'bg-slate-100 text-slate-500 border-slate-300' 
-                                                    : 'bg-emerald-100 text-emerald-700 border-emerald-300'
-                                            }`}>
-                                                {marketTab === 'spend' ? 'COST' : 'REWARD'}: {item.cost} {currentContextEconomy.currencySymbol}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </button>
-                         );
-                    })}
+                     <div className="mb-6">
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Intensity (1-5)</label>
+                         <div className="flex justify-between">
+                             {[1,2,3,4,5].map(n => (
+                                 <button key={n} onClick={() => setDepositIntensity(n)} className={`w-10 h-10 border-2 font-bold ${depositIntensity === n ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-200'}`}>{n}</button>
+                             ))}
+                         </div>
+                     </div>
 
-                    {/* Empty State */}
-                    {items.filter(i => i.category === marketTab).length === 0 && (
-                        <div className="text-center py-8 opacity-50">
-                             <p className="text-xs font-mono uppercase text-slate-500">No active listings.</p>
-                        </div>
-                    )}
-                </div>
-            </>
+                     <button onClick={handleLogBankEntry} disabled={!depositDesc.trim()} className="w-full bg-slate-900 text-white py-3 font-bold uppercase tracking-widest text-xs shadow-[4px_4px_0px_#0f172a] border-2 border-slate-900 active:shadow-none active:translate-y-0.5 disabled:opacity-50">Log Entry</button>
+                 </div>
+            </div>
         )}
 
         {/* User Currency Config Modal */}
@@ -583,16 +617,16 @@ export const RewardsMode: React.FC<Props> = ({ user, onUpdateLovedOne, onUpdateP
                      </button>
 
                      <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
-                         <DollarSign size={24} /> My Economy Settings
+                         <DollarSign size={24} /> My Currency Config
                      </h3>
                      
                      <div className="mb-4 bg-slate-100 p-2 border border-slate-200">
-                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scope</span>
-                         <div className="text-xs font-bold text-slate-900 uppercase">My Personal Currency</div>
+                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Definition</span>
+                         <div className="text-xs font-bold text-slate-900 uppercase">My Love Language</div>
                      </div>
 
                      <p className="text-xs text-slate-500 mb-4 font-mono leading-relaxed">
-                         Customize the currency you offer to others. This is what your partner will see when they interact with you.
+                        Love currency is per user, not per relationship. It represents how you accept tokens of love. When others complete tasks for you, they earn your currency.
                      </p>
                      
                      <div className="space-y-4">

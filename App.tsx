@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { AppMode, UserProfile, Reward, LovedOne, EconomyConfig, MarketItem } from './types';
+import { AppMode, UserProfile, Reward, LovedOne, EconomyConfig, MarketItem, AppNotification } from './types';
 import { Onboarding } from './components/Onboarding';
 import { LiveCoachMode } from './components/LiveCoachMode';
 import { TherapistMode } from './components/TherapistMode';
@@ -10,7 +11,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { VoiceAuth } from './components/VoiceAuth';
 import { ProfileView } from './components/ProfileView';
 import { EditProfile } from './components/EditProfile';
-import { Mic, MessageCircle, Heart, Users, X, Send, Activity, BrainCircuit, Home, ArrowRight, Menu, Settings, Ruler, Plus, Armchair, Gamepad2, Radio, DoorOpen, Gift, Star, FileText, Bell, Zap, Eye, LogOut, Sliders, Lock, Trash2, Map as MapIcon } from 'lucide-react';
+import { Mic, MessageCircle, Heart, Users, X, Send, Activity, BrainCircuit, Home, ArrowRight, Menu, Settings, Ruler, Plus, Armchair, Gamepad2, Radio, DoorOpen, Gift, Star, FileText, Bell, Zap, Eye, LogOut, Sliders, Lock, Trash2, Map as MapIcon, Filter, AlertTriangle, ArrowLeft } from 'lucide-react';
 
 const DEFAULT_MARKET_ITEMS: MarketItem[] = [
     { id: '1', title: 'Breakfast in Bed', cost: 500, icon: '🥐', type: 'service', category: 'spend' },
@@ -37,11 +38,21 @@ const App: React.FC = () => {
 
   // Dashboard State (Moved from nested component)
   const [showSidePanel, setShowSidePanel] = useState(false);
+  const [sidePanelView, setSidePanelView] = useState<'notifications' | 'settings'>('notifications');
   const [reactionMenuTarget, setReactionMenuTarget] = useState<{id: string, name: string} | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [isAddingUnit, setIsAddingUnit] = useState(false);
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitRel, setNewUnitRel] = useState('Partner');
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<AppNotification[]>([
+      { id: '1', type: 'message', title: 'New Voice Memo', message: 'Alex sent a check-in.', timestamp: Date.now() - 1000 * 60 * 5, read: false },
+      { id: '2', type: 'reward', title: 'Goal Met', message: '+500 Tokens for "Date Night".', timestamp: Date.now() - 1000 * 60 * 60, read: false },
+      { id: '3', type: 'alert', title: 'High Stress', message: 'Conflict pattern detected in Lounge.', timestamp: Date.now() - 1000 * 60 * 60 * 2, read: true },
+      { id: '4', type: 'system', title: 'System Update', message: 'v1.2.0 installed successfully.', timestamp: Date.now() - 1000 * 60 * 60 * 24, read: true },
+  ]);
+  const [notifFilter, setNotifFilter] = useState<'all' | 'alert' | 'message' | 'system' | 'reward'>('all');
 
   // Long Press & Reaction Logic
   const [menuPosition, setMenuPosition] = useState<{x: number, y: number} | null>(null);
@@ -197,6 +208,24 @@ const App: React.FC = () => {
     }
   };
 
+  // Notification API
+  const addNotification = (type: AppNotification['type'], title: string, message: string) => {
+      const newNote: AppNotification = {
+          id: Date.now().toString() + Math.random().toString(),
+          type,
+          title,
+          message,
+          timestamp: Date.now(),
+          read: false
+      };
+      setNotifications(prev => [newNote, ...prev]);
+      
+      // Optional: Auto-toast on high priority
+      if (type === 'alert' || type === 'message') {
+          showToast(title);
+      }
+  };
+
   // Dashboard Helpers
   const reactions = [
         { label: 'Love', icon: '❤️' },
@@ -303,6 +332,14 @@ const App: React.FC = () => {
       }
   };
 
+  const markAllRead = () => {
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const filteredNotifications = notifications.filter(n => notifFilter === 'all' || n.type === notifFilter);
+
   const Door = ({ side, position = 'center', swing = 'left', isOpen = false }: { side: 'top'|'right'|'bottom'|'left', position?: string, swing?: 'left'|'right', isOpen?: boolean }) => {
         let style: React.CSSProperties = {};
         
@@ -362,7 +399,13 @@ const App: React.FC = () => {
   }
 
   if (mode === AppMode.THERAPIST) {
-      return <TherapistMode user={user} onExit={() => setMode(AppMode.DASHBOARD)} />;
+      return (
+        <TherapistMode 
+            user={user} 
+            onExit={() => setMode(AppMode.DASHBOARD)}
+            onAddNotification={addNotification}
+        />
+      );
   }
 
   if (mode === AppMode.ACTIVITIES) {
@@ -374,6 +417,7 @@ const App: React.FC = () => {
                 economy={user.economy || { currencyName: 'Tokens', currencySymbol: '🪙' }}
                 onExit={() => setMode(AppMode.DASHBOARD)} 
                 onUpdateLovedOne={handleUpdateLovedOne}
+                onAddNotification={addNotification}
             />
       );
   }
@@ -387,6 +431,7 @@ const App: React.FC = () => {
               economy={user.economy || { currencyName: 'Tokens', currencySymbol: '🪙' }}
               onExit={() => setMode(AppMode.DASHBOARD)}
               onUpdateLovedOne={handleUpdateLovedOne}
+              onAddNotification={addNotification}
           />
       );
   }
@@ -398,6 +443,7 @@ const App: React.FC = () => {
               onUpdateLovedOne={handleUpdateLovedOne}
               onUpdateProfile={handleProfileUpdate}
               onExit={() => setMode(AppMode.DASHBOARD)}
+              onAddNotification={addNotification}
           />
       );
   }
@@ -621,49 +667,140 @@ const App: React.FC = () => {
        </div>
 
        <button 
-            onClick={() => setShowSidePanel(true)} 
-            className="absolute bottom-6 right-6 z-30 w-8 h-8 bg-white text-slate-900 border-2 border-slate-900 shadow-[2px_2px_0px_rgba(30,41,59,1)] flex items-center justify-center hover:bg-slate-50 transition-all active:translate-y-0.5 active:shadow-none"
-            title="System Config"
+            onClick={() => { setShowSidePanel(true); setSidePanelView('notifications'); }} 
+            className="absolute bottom-6 right-6 z-30 w-10 h-10 bg-slate-900 text-white border-2 border-slate-900 shadow-[2px_2px_0px_rgba(255,255,255,1)] flex items-center justify-center hover:bg-slate-800 transition-all active:translate-y-0.5 active:shadow-none group"
+            title="Notification Center"
        >
-            <Settings size={14} />
+            <Bell size={18} className={unreadCount > 0 ? 'animate-bounce' : ''} />
+            {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-slate-900"></span>
+            )}
        </button>
 
        <div className={`fixed inset-y-0 right-0 w-80 bg-slate-900 text-white shadow-2xl transform transition-transform duration-300 ease-in-out z-50 flex flex-col ${showSidePanel ? 'translate-x-0' : 'translate-x-full'}`}>
-           <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-950">
-               <div><h2 className="font-mono text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Specification</h2><h3 className="text-xl font-bold">System Config</h3></div>
-               <button onClick={() => setShowSidePanel(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
-           </div>
-           <div className="p-6 border-b border-slate-800 bg-slate-900/50">
-               <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white text-slate-900 rounded-lg flex items-center justify-center font-bold text-xl border-2 border-slate-400">{user?.name.charAt(0)}</div>
-                    <div>
-                        <div className="text-xs font-mono text-slate-500 uppercase">Project Lead</div>
-                        <div className="font-bold">{user?.name}</div>
-                        <button onClick={() => { setShowSidePanel(false); setMode(AppMode.EDIT_PROFILE); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 mt-1"><Settings size={10} /> Edit Profile</button>
-                    </div>
-               </div>
-           </div>
-           <div className="flex-1 overflow-y-auto relative">
-                <div className="p-4 bg-slate-800/50 border-b border-slate-700"><h3 className="font-bold text-slate-400 flex items-center gap-2 text-xs uppercase tracking-widest"><Sliders size={14} /> Global Preferences</h3></div>
-                <div className="divide-y divide-slate-800">
-                    <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
-                        <div className="flex items-center gap-3"><Bell size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Smart Nudges</p><p className="text-[10px] text-slate-500 font-mono">Wearable Alerts</p></div></div>
-                        <button onClick={() => togglePref('notifications')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('notifications') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('notifications') ? 'left-5' : 'left-0.5'}`} /></button>
-                    </div>
-                    <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
-                        <div className="flex items-center gap-3"><Zap size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Haptics</p><p className="text-[10px] text-slate-500 font-mono">Tactile Feedback</p></div></div>
-                        <button onClick={() => togglePref('hapticFeedback')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('hapticFeedback') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('hapticFeedback') ? 'left-5' : 'left-0.5'}`} /></button>
-                    </div>
-                    <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
-                        <div className="flex items-center gap-3"><Eye size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Stealth Mode</p><p className="text-[10px] text-slate-500 font-mono">Mask Dashboard</p></div></div>
-                        <button onClick={() => togglePref('privacyMode')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('privacyMode') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('privacyMode') ? 'left-5' : 'left-0.5'}`} /></button>
-                    </div>
-                </div>
-                <div className="p-6 text-center mt-4"><p className="text-[9px] font-mono text-slate-500 mb-2 uppercase">Inside.OS v1.2.0</p></div>
-           </div>
-           <div className="p-6 border-t border-slate-800 bg-slate-950 space-y-3">
-                <button onClick={handleLogout} className="w-full py-3 text-rose-500 hover:text-white hover:bg-rose-900 transition-all text-xs font-mono uppercase tracking-widest flex items-center justify-center gap-2 border border-dashed border-rose-900/30 hover:border-rose-500"><LogOut size={14} /> System Logout</button>
-           </div>
+           
+           {/* === NOTIFICATION CENTER VIEW === */}
+           {sidePanelView === 'notifications' && (
+               <>
+                   <div className="p-6 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
+                       <div>
+                           <h2 className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Inbox</h2>
+                           <div className="flex items-center gap-2">
+                               <h3 className="text-lg font-black uppercase tracking-tight">Notification Center</h3>
+                               {unreadCount > 0 && <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 rounded">{unreadCount}</span>}
+                           </div>
+                       </div>
+                       <div className="flex items-center gap-2">
+                           <button onClick={() => setSidePanelView('settings')} className="text-slate-400 hover:text-white transition-colors" title="Settings">
+                               <Settings size={20} />
+                           </button>
+                           <button onClick={() => setShowSidePanel(false)} className="text-slate-400 hover:text-white transition-colors">
+                               <X size={24} />
+                           </button>
+                       </div>
+                   </div>
+
+                   {/* Filters */}
+                   <div className="p-4 border-b border-slate-800 flex gap-2 overflow-x-auto no-scrollbar shrink-0">
+                       {['all', 'message', 'alert', 'reward', 'system'].map((f) => (
+                           <button
+                               key={f}
+                               onClick={() => setNotifFilter(f as any)}
+                               className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border transition-colors whitespace-nowrap ${
+                                   notifFilter === f 
+                                   ? 'bg-white text-slate-900 border-white' 
+                                   : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                               }`}
+                           >
+                               {f}
+                           </button>
+                       ))}
+                   </div>
+
+                   {/* List */}
+                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                       {filteredNotifications.length === 0 && (
+                           <div className="text-center py-10 text-slate-600 text-xs font-mono uppercase">No notifications found.</div>
+                       )}
+                       {filteredNotifications.map(n => (
+                           <div key={n.id} className={`p-4 bg-slate-800 border-l-4 ${n.read ? 'border-slate-600 opacity-60' : 'border-indigo-500'} hover:bg-slate-700 transition-colors group relative`}>
+                               {!n.read && <div className="absolute top-2 right-2 w-2 h-2 bg-indigo-500 rounded-full"></div>}
+                               <div className="flex items-start gap-3">
+                                   <div className={`mt-0.5 ${
+                                       n.type === 'alert' ? 'text-orange-500' :
+                                       n.type === 'message' ? 'text-blue-400' :
+                                       n.type === 'reward' ? 'text-yellow-400' : 'text-slate-400'
+                                   }`}>
+                                       {n.type === 'alert' ? <AlertTriangle size={16} /> :
+                                        n.type === 'message' ? <MessageCircle size={16} /> :
+                                        n.type === 'reward' ? <Gift size={16} /> : <Zap size={16} />}
+                                   </div>
+                                   <div>
+                                       <h4 className="text-xs font-bold uppercase text-white mb-0.5">{n.title}</h4>
+                                       <p className="text-[11px] text-slate-300 leading-snug font-medium">{n.message}</p>
+                                       <span className="text-[9px] font-mono text-slate-500 mt-2 block">{Math.floor((Date.now() - n.timestamp) / 60000)}m ago</span>
+                                   </div>
+                               </div>
+                           </div>
+                       ))}
+                   </div>
+                   
+                   <div className="p-4 border-t border-slate-800 bg-slate-950 shrink-0">
+                       <button onClick={markAllRead} className="w-full text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors">Mark All as Read</button>
+                   </div>
+               </>
+           )}
+
+           {/* === SETTINGS VIEW === */}
+           {sidePanelView === 'settings' && (
+               <>
+                   <div className="p-6 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
+                       <div className="flex items-center gap-3">
+                           <button onClick={() => setSidePanelView('notifications')} className="text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20} /></button>
+                           <div>
+                               <h2 className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Config</h2>
+                               <h3 className="text-lg font-black uppercase tracking-tight">System Settings</h3>
+                           </div>
+                       </div>
+                       <button onClick={() => setShowSidePanel(false)} className="text-slate-400 hover:text-white transition-colors">
+                           <X size={24} />
+                       </button>
+                   </div>
+
+                   <div className="flex-1 overflow-y-auto">
+                        <div className="p-6 border-b border-slate-800 bg-slate-900/50">
+                            <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-white text-slate-900 rounded-lg flex items-center justify-center font-bold text-xl border-2 border-slate-400">{user?.name.charAt(0)}</div>
+                                    <div>
+                                        <div className="text-xs font-mono text-slate-500 uppercase">Project Lead</div>
+                                        <div className="font-bold">{user?.name}</div>
+                                        <button onClick={() => { setShowSidePanel(false); setMode(AppMode.EDIT_PROFILE); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 mt-1"><Settings size={10} /> Edit Profile</button>
+                                    </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-800/50 border-b border-slate-700"><h3 className="font-bold text-slate-400 flex items-center gap-2 text-xs uppercase tracking-widest"><Sliders size={14} /> Global Preferences</h3></div>
+                        <div className="divide-y divide-slate-800">
+                            <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
+                                <div className="flex items-center gap-3"><Bell size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Smart Nudges</p><p className="text-[10px] text-slate-500 font-mono">Wearable Alerts</p></div></div>
+                                <button onClick={() => togglePref('notifications')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('notifications') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('notifications') ? 'left-5' : 'left-0.5'}`} /></button>
+                            </div>
+                            <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
+                                <div className="flex items-center gap-3"><Zap size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Haptics</p><p className="text-[10px] text-slate-500 font-mono">Tactile Feedback</p></div></div>
+                                <button onClick={() => togglePref('hapticFeedback')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('hapticFeedback') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('hapticFeedback') ? 'left-5' : 'left-0.5'}`} /></button>
+                            </div>
+                            <div className="p-4 flex items-center justify-between hover:bg-slate-800 transition-colors">
+                                <div className="flex items-center gap-3"><Eye size={18} className="text-slate-400" /><div><p className="text-sm font-bold text-white uppercase">Stealth Mode</p><p className="text-[10px] text-slate-500 font-mono">Mask Dashboard</p></div></div>
+                                <button onClick={() => togglePref('privacyMode')} className={`w-10 h-5 transition-colors relative border-2 ${getPref('privacyMode') ? 'bg-green-500 border-green-600' : 'bg-slate-700 border-slate-600'}`}><div className={`w-3 h-3 bg-white shadow-sm absolute top-0.5 transition-all ${getPref('privacyMode') ? 'left-5' : 'left-0.5'}`} /></button>
+                            </div>
+                        </div>
+                        <div className="p-6 text-center mt-4"><p className="text-[9px] font-mono text-slate-500 mb-2 uppercase">Inside.OS v1.2.0</p></div>
+                   </div>
+                   <div className="p-6 border-t border-slate-800 bg-slate-950 space-y-3 shrink-0">
+                        <button onClick={handleLogout} className="w-full py-3 text-rose-500 hover:text-white hover:bg-rose-900 transition-all text-xs font-mono uppercase tracking-widest flex items-center justify-center gap-2 border border-dashed border-rose-900/30 hover:border-rose-500"><LogOut size={14} /> System Logout</button>
+                   </div>
+               </>
+           )}
        </div>
 
        {isAddingUnit && (
